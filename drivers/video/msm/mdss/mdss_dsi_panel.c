@@ -21,6 +21,8 @@
 #include <linux/leds.h>
 #include <linux/qpnp/pwm.h>
 #include <linux/err.h>
+#include <linux/backlight.h>
+#include <linux/mfd/lm3533.h>
 
 #include "mdss_dsi.h"
 
@@ -98,10 +100,20 @@ static void mdss_dsi_panel_bklt_pwm(struct mdss_dsi_ctrl_pdata *ctrl, int level)
 }
 
 static char dcs_cmd[2] = {0x54, 0x00}; /* DTYPE_DCS_READ */
+static char rbuf[10];
 static struct dsi_cmd_desc dcs_read_cmd = {
 	{DTYPE_DCS_READ, 1, 0, 1, 5, sizeof(dcs_cmd)},
 	dcs_cmd
 };
+
+void mdss_dsi_dcs_read_cb(u32 cb_result)
+{
+	u32 i;
+ 	pr_info("%s: 0x%x. \n", __func__, cb_result);
+	for (i=0; i<cb_result; i++)
+		pr_info("0x%x ", rbuf[i]);
+	pr_info("\n");
+}
 
 u32 mdss_dsi_panel_cmd_read(struct mdss_dsi_ctrl_pdata *ctrl, char cmd0,
 		char cmd1, void (*fxn)(int), char *rbuf, int len)
@@ -244,6 +256,9 @@ int mdss_dsi_panel_reset(struct mdss_panel_data *pdata, int enable)
 		if (!pinfo->panel_power_on) {
 			if (gpio_is_valid(ctrl_pdata->disp_en_gpio))
 				gpio_set_value((ctrl_pdata->disp_en_gpio), 1);
+				
+			/*to adapt IC spec*/
+			msleep(30);
 
 			for (i = 0; i < pdata->panel_info.rst_seq_len; ++i) {
 				gpio_set_value((ctrl_pdata->rst_gpio),
@@ -333,6 +348,103 @@ static int mdss_dsi_panel_partial_update(struct mdss_panel_data *pdata)
 	return rc;
 }
 
+static int mdss_dsi_panel_dispparam(struct mdss_panel_data *pdata)
+{
+	struct mipi_panel_info *mipi;
+	struct mdss_dsi_ctrl_pdata *ctrl = NULL;
+	int rc = 0;
+	unsigned int param, temp;
+ 	if (pdata == NULL) {
+		pr_err("%s: Invalid input data\n", __func__);
+		return -EINVAL;
+	}
+ 	ctrl = container_of(pdata, struct mdss_dsi_ctrl_pdata,
+			panel_data);
+	mipi  = &pdata->panel_info.mipi;
+ 	pr_debug("%s: ctrl=%p ndx=%d\n", __func__, ctrl, ctrl->ndx);
+ 	param = pdata->panel_info.panel_paramstatus;
+	pr_info("param 0x%x\n", param);
+ 	temp = param & 0x000000F0;
+	switch(temp) {
+		case 0x10:		//ce on
+			if (ctrl->dispparam_ceon_cmds.cmd_cnt){
+				pr_info("ceon\n");
+				mdss_dsi_panel_cmds_send(ctrl, &ctrl->dispparam_ceon_cmds);
+			}
+			break;
+ 		case 0xF0:		//ce off
+			if (ctrl->dispparam_ceoff_cmds.cmd_cnt){
+				pr_info("ceoff\n");
+				mdss_dsi_panel_cmds_send(ctrl, &ctrl->dispparam_ceoff_cmds);
+			}
+			break;
+		default:
+			break;
+	}
+ 	temp = param & 0x0000000F;
+	switch(temp) {
+		case 0x1:		//warm
+			if (ctrl->dispparam_warm_cmds.cmd_cnt){
+				pr_info("warm\n");
+				mdss_dsi_panel_cmds_send(ctrl, &ctrl->dispparam_warm_cmds);
+			}
+			break;
+		case 0x2:		//normal
+			if (ctrl->dispparam_default_cmds.cmd_cnt){
+				pr_info("normal\n");
+				mdss_dsi_panel_cmds_send(ctrl, &ctrl->dispparam_default_cmds);
+			}
+			break;
+		case 0x3:		//cold
+			if (ctrl->dispparam_cold_cmds.cmd_cnt){
+				pr_info("cold\n");
+				mdss_dsi_panel_cmds_send(ctrl, &ctrl->dispparam_cold_cmds);
+			}
+			break;
+		default:
+			break;
+	}
+ 	//for cabc
+	temp = param & 0x00000F00;
+	switch(temp) {
+		case 0x100:		//gui
+			if (ctrl->dispparam_cabcon_gui_cmds.cmd_cnt){
+				pr_info("gui on\n");
+				mdss_dsi_panel_cmds_send(ctrl, &ctrl->dispparam_cabcon_gui_cmds);
+			}
+			break;
+		case 0x200:		//still
+			if (ctrl->dispparam_cabcon_still_cmds.cmd_cnt){
+				pr_info("still on\n");
+				mdss_dsi_panel_cmds_send(ctrl, &ctrl->dispparam_cabcon_still_cmds);
+			}
+			break;
+		case 0x300:		//movie
+			if (ctrl->dispparam_cabcon_movie_cmds.cmd_cnt){
+				pr_info("movie on\n");
+				mdss_dsi_panel_cmds_send(ctrl, &ctrl->dispparam_cabcon_movie_cmds);
+			}
+			break;
+		case 0xF00:		//cabc off
+			if (ctrl->dispparam_cabcoff_cmds.cmd_cnt){
+				pr_info("cabc off\n");
+				mdss_dsi_panel_cmds_send(ctrl, &ctrl->dispparam_cabcoff_cmds);
+			}
+			break;
+		default:
+			break;
+	}
+ 	temp = param & 0x0000F000;
+	switch(temp) {
+		case 0x1000:
+			mdss_dsi_panel_cmd_read(ctrl, 0x0A, 0x00, (void *)mdss_dsi_dcs_read_cb, rbuf, 0);
+			break;
+		default:
+			break;
+	}
+ 	return rc;
+}
+
 static void mdss_dsi_panel_switch_mode(struct mdss_panel_data *pdata,
 							int mode)
 {
@@ -405,6 +517,12 @@ static void mdss_dsi_panel_bl_ctrl(struct mdss_panel_data *pdata,
 			mdss_dsi_panel_bklt_dcs(sctrl, bl_level);
 		}
 		break;
+	case BL_SIC:
+		if (lm3533_bl_bd){
+			lm3533_bl_bd->props.brightness = bl_level;
+			backlight_update_status(lm3533_bl_bd);
+		}
+		break;
 	default:
 		pr_err("%s: Unknown bl_ctrl configuration\n",
 			__func__);
@@ -426,12 +544,12 @@ static int mdss_dsi_panel_on(struct mdss_panel_data *pdata)
 				panel_data);
 	mipi  = &pdata->panel_info.mipi;
 
-	pr_debug("%s: ctrl=%p ndx=%d\n", __func__, ctrl, ctrl->ndx);
+	pr_info("%s: ctrl=%p ndx=%d\n", __func__, ctrl, ctrl->ndx);
 
 	if (ctrl->on_cmds.cmd_cnt)
 		mdss_dsi_panel_cmds_send(ctrl, &ctrl->on_cmds);
 
-	pr_debug("%s:-\n", __func__);
+	pr_info("%s:-\n", __func__);
 	return 0;
 }
 
@@ -448,14 +566,14 @@ static int mdss_dsi_panel_off(struct mdss_panel_data *pdata)
 	ctrl = container_of(pdata, struct mdss_dsi_ctrl_pdata,
 				panel_data);
 
-	pr_debug("%s: ctrl=%p ndx=%d\n", __func__, ctrl, ctrl->ndx);
+	pr_info("%s: ctrl=%p ndx=%d\n", __func__, ctrl, ctrl->ndx);
 
 	mipi  = &pdata->panel_info.mipi;
 
 	if (ctrl->off_cmds.cmd_cnt)
 		mdss_dsi_panel_cmds_send(ctrl, &ctrl->off_cmds);
 
-	pr_debug("%s:-\n", __func__);
+	pr_info("%s:-\n", __func__);
 	return 0;
 }
 
@@ -1082,6 +1200,8 @@ static int mdss_panel_parse_dt(struct device_node *np,
 			ctrl_pdata->pwm_pmic_gpio = tmp;
 		} else if (!strncmp(data, "bl_ctrl_dcs", 11)) {
 			ctrl_pdata->bklt_ctrl = BL_DCS_CMD;
+		}else if (!strncmp(data, "bl_ctrl_sic", 11)){
+			ctrl_pdata->bklt_ctrl = BL_SIC;
 		}
 	}
 	rc = of_property_read_u32(np, "qcom,mdss-brightness-max-level", &tmp);
@@ -1226,6 +1346,27 @@ static int mdss_panel_parse_dt(struct device_node *np,
 
 	mdss_dsi_parse_dcs_cmds(np, &ctrl_pdata->off_cmds,
 		"qcom,mdss-dsi-off-command", "qcom,mdss-dsi-off-command-state");
+		
+	mdss_dsi_parse_dcs_cmds(np, &ctrl_pdata->dispparam_cmds,
+		"qcom,mdss-dsi-dispparam-command", "qcom,mdss-dsi-dispparam-command-state");
+ 	mdss_dsi_parse_dcs_cmds(np, &ctrl_pdata->dispparam_ceon_cmds,
+		"qcom,mdss-dsi-dispparam-ceon-command", "qcom,mdss-dsi-dispparam-ceon-command-state");
+ 	mdss_dsi_parse_dcs_cmds(np, &ctrl_pdata->dispparam_ceoff_cmds,
+		"qcom,mdss-dsi-dispparam-ceoff-command", "qcom,mdss-dsi-dispparam-ceoff-command-state");
+ 	mdss_dsi_parse_dcs_cmds(np, &ctrl_pdata->dispparam_cabcon_gui_cmds,
+		"qcom,mdss-dsi-dispparam-cabcon-command_GUI", "qcom,mdss-dsi-dispparam-cabcon-command-state");
+ 	mdss_dsi_parse_dcs_cmds(np, &ctrl_pdata->dispparam_cabcon_still_cmds,
+		"qcom,mdss-dsi-dispparam-cabcon-command_STILL", "qcom,mdss-dsi-dispparam-cabcon-command-state");
+ 	mdss_dsi_parse_dcs_cmds(np, &ctrl_pdata->dispparam_cabcon_movie_cmds,
+		"qcom,mdss-dsi-dispparam-cabcon-command_MOVIE", "qcom,mdss-dsi-dispparam-cabcon-command-state");
+ 	mdss_dsi_parse_dcs_cmds(np, &ctrl_pdata->dispparam_cabcoff_cmds,
+		"qcom,mdss-dsi-dispparam-cabcoff-command", "qcom,mdss-dsi-dispparam-cabcoff-command-state");
+ 	mdss_dsi_parse_dcs_cmds(np, &ctrl_pdata->dispparam_warm_cmds,
+		"qcom,mdss-dsi-dispparam-warm-command", "qcom,mdss-dsi-dispparam-warm-command-state");
+ 	mdss_dsi_parse_dcs_cmds(np, &ctrl_pdata->dispparam_default_cmds,
+		"qcom,mdss-dsi-dispparam-default-command", "qcom,mdss-dsi-dispparam-default-command-state");
+ 	mdss_dsi_parse_dcs_cmds(np, &ctrl_pdata->dispparam_cold_cmds,
+		"qcom,mdss-dsi-dispparam-cold-command", "qcom,mdss-dsi-dispparam-cold-command-state");
 
 	mdss_dsi_parse_dcs_cmds(np, &ctrl_pdata->status_cmds,
 			"qcom,mdss-dsi-panel-status-command",
@@ -1265,6 +1406,7 @@ int mdss_dsi_panel_init(struct device_node *node,
 	int rc = 0;
 	static const char *panel_name;
 	struct mdss_panel_info *pinfo;
+	bool dispparam_enabled;
 
 	if (!node || !ctrl_pdata) {
 		pr_err("%s: Invalid arguments\n", __func__);
@@ -1294,6 +1436,18 @@ int mdss_dsi_panel_init(struct device_node *node,
 
 	pinfo->dynamic_switch_pending = false;
 	pinfo->is_lpm_mode = false;
+
+	dispparam_enabled = of_property_read_bool(node,
+						"qcom,dispparam-enabled");
+	if (dispparam_enabled) {
+		pr_info("%s:%d Dispparam enabled.\n", __func__, __LINE__);
+		ctrl_pdata->panel_data.panel_info.dispparam_enabled = 1;
+		ctrl_pdata->dispparam_fnc = mdss_dsi_panel_dispparam;
+	} else {
+		pr_info("%s:%d Dispparam disabled.\n", __func__, __LINE__);
+		ctrl_pdata->panel_data.panel_info.dispparam_enabled = 0;
+		ctrl_pdata->dispparam_fnc = NULL;
+	}
 
 	ctrl_pdata->on = mdss_dsi_panel_on;
 	ctrl_pdata->off = mdss_dsi_panel_off;

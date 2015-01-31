@@ -54,6 +54,7 @@ static int mdss_mdp_overlay_fb_parse_dt(struct msm_fb_data_type *mfd);
 static int mdss_mdp_overlay_off(struct msm_fb_data_type *mfd);
 static void __overlay_kickoff_requeue(struct msm_fb_data_type *mfd);
 static void __vsync_retire_signal(struct msm_fb_data_type *mfd, int val);
+static int mdss_mdp_overlay_splash_parse_dt(struct msm_fb_data_type *mfd);
 
 static inline u32 left_lm_w_from_mfd(struct msm_fb_data_type *mfd)
 {

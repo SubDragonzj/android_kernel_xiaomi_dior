@@ -1243,6 +1243,8 @@ static inline void venus_hfi_clk_disable(struct venus_hfi_device *device)
 		dprintk(VIDC_DBG, "%s: Clock: %s disabled\n",
 			__func__, cl->name);
 	}
+	device->clk_state = DISABLED_PREPARED;
+	--device->clk_cnt;
 }
 
 static int venus_hfi_halt_axi(struct venus_hfi_device *device)
@@ -1342,6 +1344,11 @@ static inline int venus_hfi_power_on(struct venus_hfi_device *device)
 		dprintk(VIDC_ERR, "Failed to enable GDSC %d", rc);
 		goto err_enable_gdsc;
 	}
+
+	if (device->clk_state == DISABLED_UNPREPARED)
+		rc = venus_hfi_prepare_enable_clks(device);
+	else if (device->clk_state == DISABLED_PREPARED)
+		rc = venus_hfi_clk_enable(device);
 
 	if (device->clk_state == DISABLED_UNPREPARED)
 		rc = venus_hfi_prepare_enable_clks(device);
@@ -3356,6 +3363,8 @@ static inline void venus_hfi_disable_unprepare_clks(
 		dprintk(VIDC_DBG, "%s: Clock: %s unprepared\n",
 			__func__, cl->name);
 	}
+	device->clk_state = DISABLED_UNPREPARED;
+	--device->clk_cnt;
 }
 
 static inline int venus_hfi_prepare_enable_clks(struct venus_hfi_device *device)
@@ -3726,10 +3735,16 @@ static int venus_hfi_load_fw(void *dev)
 		rc = -ENOMEM;
 		goto fail_load_fw;
 	}
-
 	device->power_enabled = true;
 	++device->pwr_cnt;
-
+	/*Clocks can be enabled only after pil_get since
+	 * gdsc is turned-on in pil_get*/
+	rc = venus_hfi_prepare_enable_clks(device);
+	mutex_unlock(&device->clk_pwr_lock);
+	if (rc) {
+		dprintk(VIDC_ERR, "Failed to enable clocks: %d\n", rc);
+		goto fail_enable_clks;
+	}
 	rc = protect_cp_mem(device);
 	if (rc) {
 		dprintk(VIDC_ERR, "Failed to protect memory\n");
@@ -3740,6 +3755,10 @@ static int venus_hfi_load_fw(void *dev)
 	return rc;
 
 fail_protect_mem:
+	mutex_lock(&device->clk_pwr_lock);
+	venus_hfi_disable_unprepare_clks(device);
+	mutex_unlock(&device->clk_pwr_lock);
+fail_enable_clks:
 	subsystem_put(device->resources.fw.cookie);
 	device->resources.fw.cookie = NULL;
 fail_load_fw:
