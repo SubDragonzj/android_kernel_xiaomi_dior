@@ -3764,8 +3764,6 @@ fail_enable_clks:
 fail_load_fw:
 	venus_hfi_iommu_detach(device);
 fail_iommu_attach:
-	venus_hfi_disable_unprepare_clks(device);
-fail_enable_clks:
 	regulator_disable(device->gdsc);
 	device->power_enabled = false;
 	--device->pwr_cnt;

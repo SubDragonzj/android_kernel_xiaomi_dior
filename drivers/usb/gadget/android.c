@@ -55,6 +55,7 @@ static int android_is_set_cdrom(void);
 #include "f_midi.c"
 #endif
 #include "f_diag.c"
+#include "f_fs.c"
 #include "f_qdss.c"
 #include "f_rmnet_smd.c"
 #include "f_rmnet_sdio.c"
@@ -64,8 +65,6 @@ static int android_is_set_cdrom(void);
 #ifdef CONFIG_SND_PCM
 #include "f_audio_source.c"
 #endif
-#include "f_midi.c"
-#include "f_fs.c"
 #include "f_mass_storage.c"
 #include "u_serial.c"
 #include "u_sdio.c"

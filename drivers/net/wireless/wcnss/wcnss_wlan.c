@@ -2062,7 +2062,7 @@ static void wcnss_nvbin_dnld(void)
 	ret = request_firmware(&nv, xiaomi_wlan_nv_file, dev);
 
 	if (ret || !nv || !nv->data || !nv->size) {
-		pr_err("wcnss: %s: request_firmware failed for %s(ret = %d)\n",
+		pr_err("wcnss: %s: request_firmware failed for %s\n",
 			__func__, xiaomi_wlan_nv_file);
 		goto out;
 	}

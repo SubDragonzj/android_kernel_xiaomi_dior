@@ -1157,7 +1157,7 @@ static int read_soc_params_raw(struct qpnp_bms_chip *chip,
 			pr_info("OCV is stale or bad, estimating new OCV.\n");
 
 			instant_ocv_mv = read_saved_instant_ocv(chip);
-			estimated_mv = estimate_ocv(chip) / 1000;
+			estimated_mv = estimate_ocv(chip, batt_temp) / 1000;
 			pr_info("instant ocv %d estimated %d\n",
 				instant_ocv_mv, estimated_mv);
 
