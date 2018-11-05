@@ -317,7 +317,7 @@ static int mdss_dsi_panel_partial_update(struct mdss_panel_data *pdata)
 				panel_data);
 	mipi  = &pdata->panel_info.mipi;
 
-	pr_debug("%s: ctrl=%pK ndx=%d\n", __func__, ctrl, ctrl->ndx);
+	pr_debug("%s: ctrl=%p ndx=%d\n", __func__, ctrl, ctrl->ndx);
 
 	caset[1] = (((pdata->panel_info.roi_x) & 0xFF00) >> 8);
 	caset[2] = (((pdata->panel_info.roi_x) & 0xFF));
@@ -566,8 +566,7 @@ static int mdss_dsi_panel_off(struct mdss_panel_data *pdata)
 	ctrl = container_of(pdata, struct mdss_dsi_ctrl_pdata,
 				panel_data);
 
-
-	pr_info("%s+: ctrl=%pK ndx=%d\n", __func__, ctrl, ctrl->ndx);
+	pr_info("%s: ctrl=%p ndx=%d\n", __func__, ctrl, ctrl->ndx);
 
 	mipi  = &pdata->panel_info.mipi;
 
@@ -577,146 +576,6 @@ static int mdss_dsi_panel_off(struct mdss_panel_data *pdata)
 	pr_info("%s:-\n", __func__);
 	return 0;
 }
-#else
-static int mdss_dsi_panel_off(struct mdss_panel_data *pdata)
-{
-	struct mipi_panel_info *mipi;
-	struct mdss_dsi_ctrl_pdata *ctrl = NULL;
-
-#if !defined(CONFIG_FB_MSM_MIPI_LGD_VIDEO_WVGA_PT_INCELL_PANEL)
-	hw_rev_type hw_rev;
-	hw_rev = lge_get_board_revno();
-#endif
-
-	if (pdata == NULL) {
-		pr_err("%s: Invalid input data\n", __func__);
-		return -EINVAL;
-	}
-
-	ctrl = container_of(pdata, struct mdss_dsi_ctrl_pdata,
-				panel_data);
-
-
-	pr_info("%s+: ctrl=%pK ndx=%d\n", __func__, ctrl, ctrl->ndx);
-
-	mipi  = &pdata->panel_info.mipi;
-
-#ifdef CONFIG_FB_MSM_MIPI_LGD_LH500WX9_VIDEO_HD_PT_PANEL
-#if 1
-	if (gpio_is_valid(ctrl->disp_en_gpio)) {
-		if (lge_display_off_cmds.cmd_cnt) {
-			mdss_dsi_panel_cmds_send(ctrl, &lge_display_off_cmds);
-			printk("[%s] display off cmds are sent \n", __func__);
-		}
-
-		/* DSV disable */
-		gpio_set_value((ctrl->disp_en_gpio), 0);
-		gpio_free(ctrl->disp_en_gpio);
-		printk("ctrl->disp_en_gpio = %x , DSV is HIGH \n", ctrl->disp_en_gpio);
-		mdelay(10);
-
-		if (lge_sleep_in_cmds.cmd_cnt) {
-				mdss_dsi_panel_cmds_send(ctrl, &lge_sleep_in_cmds);
-				printk("[%s] sleep in cmds are sent \n", __func__);
-		}
-
-		mdss_dsi_panel_reset(pdata, 0); /* qct original */
-	}
-#else
-	if (gpio_is_valid(ctrl->disp_en_gpio)) {
-		if (lge_display_off_cmds.cmd_cnt) {
-			mdss_dsi_panel_cmds_send(ctrl, &lge_display_off_cmds);
-		}
-		printk("ctrl->disp_en_gpio = %x \n", ctrl->disp_en_gpio);
-		gpio_set_value((ctrl->disp_en_gpio), 0);
-		if (has_dsv_f) {
-			printk("DSV_EN LOW \n");
-			mdelay(10);
-			if (lge_sleep_in_cmds.cmd_cnt) {
-				mdss_dsi_panel_cmds_send(ctrl, &lge_sleep_in_cmds);
-			}
-		}
-	}
-#endif
-#else
-
-#if defined(CONFIG_FB_MSM_MIPI_LGIT_LH470WX1_VIDEO_HD_PT_PANEL)
-#if defined(CONFIG_MACH_MSM8926_X10_VZW) || defined(CONFIG_MACH_MSM8926_B2L_ATT) || defined(CONFIG_MACH_MSM8926_B2LN_KR) || defined(CONFIG_MACH_MSM8926_JAGN_KR) || defined(CONFIG_MACH_MSM8926_JAGNM_GLOBAL_COM) || defined(CONFIG_MACH_MSM8226_JAG3GSS_GLOBAL_COM) || defined(CONFIG_MACH_MSM8226_JAG3GDS_GLOBAL_COM)
-	if (HW_REV_0 == hw_rev)
-#endif
-    {
-		if (ctrl->off_cmds.cmd_cnt)
-			mdss_dsi_panel_cmds_send(ctrl, &ctrl->off_cmds);
-
-		mdelay(20);
-		if (gpio_is_valid(ctrl->disp_en_gpio)) {
-			gpio_set_value((ctrl->disp_en_gpio), 0);
-			if (has_dsv_f)
-				mdss_dsi_panel_reset(pdata, 0);
-		}
-		mdelay(20);
-		if (lge_display_off_cmds.cmd_cnt) {
-			mdss_dsi_panel_cmds_send(ctrl, &lge_display_off_cmds);
-		}
-		mdelay(20);
-	}
-#endif
-
-#if !defined(CONFIG_FB_MSM_MIPI_LGIT_LH470WX1_VIDEO_HD_PT_PANEL)
-#if defined(CONFIG_MACH_MSM8926_X10_VZW) || defined(CONFIG_MACH_MSM8926_B2L_ATT) || defined(CONFIG_MACH_MSM8926_B2LN_KR) || defined(CONFIG_MACH_MSM8926_JAGN_KR) || defined(CONFIG_MACH_MSM8926_JAGNM_GLOBAL_COM) || defined(CONFIG_MACH_MSM8226_JAG3GSS_GLOBAL_COM) || defined(CONFIG_MACH_MSM8226_JAG3GDS_GLOBAL_COM)
-	if (HW_REV_0 != hw_rev)
-#endif
-    {
-		if (ctrl->off_cmds.cmd_cnt)
-			mdss_dsi_panel_cmds_send(ctrl, &ctrl->off_cmds);
-	}
-#endif
-
-#if defined(CONFIG_LGE_MIPI_TOVIS_VIDEO_540P_PANEL) || defined(CONFIG_FB_MSM_MIPI_TIANMA_VIDEO_QHD_PT_PANEL)
-	if (gpio_is_valid(ctrl->disp_en_gpio)) {
-		gpio_set_value((ctrl->disp_en_gpio), 0);
-		gpio_free(ctrl->disp_en_gpio);
-		if (has_dsv_f)
-			mdss_dsi_panel_reset(pdata, 0);
-	}
-#endif
-#if defined(CONFIG_FB_MSM_MIPI_LGD_VIDEO_WVGA_PT_INCELL_PANEL)
-	if (!is_dsv_cont_splash_screening_f && gpio_is_valid(ctrl->disp_en_gpio)){
-#if defined(CONFIG_MACH_MSM8926_E2_MPCS_US) || defined(CONFIG_MACH_MSM8926_E2_SPR_US) || defined(CONFIG_MACH_MSM8926_E2_VZW) || defined(CONFIG_MACH_MSM8926_E2_VTR_CA)
-		_mdss_set_dsv_en(0);
-#else
-		if (gpio_is_valid(ctrl->disp_en_gpio)) {
-			gpio_set_value((ctrl->disp_en_gpio), 0);
-			/* gpio_set_value(DSV_FD, 0); */
-			gpio_set_value((ctrl->disp_fd_gpio), 0);
-			mdelay(15);
-			/* gpio_set_value(DSV_FD, 1); */
-			gpio_set_value((ctrl->disp_fd_gpio), 1);
-			mdelay(19);
-		}
-#endif
-#if defined(CONFIG_LGE_LCD_DSV_CTRL)
-		/* After LCD Off, DSV control is available like "is_available_dsv_control = 1 */
-		dsv_control_enable = 1;
-		pr_info("%s : dsv_control is available after this time. dsv_control_enable = [%d]\n", __func__, dsv_control_enable);
-#endif
-	}
-#endif
-#endif
-
-#if defined (CONFIG_MACH_MSM8X10_W5) || defined (CONFIG_MACH_MSM8X10_W6) || defined (CONFIG_MACH_MSM8X10_L70P)
-/* At booting up, Between LG Logo and Operation Animation showing, abnormal LG Logo is appearing one time.
-Because LG Logo image format is RGB888, Android side image format is RGBA8888, both Image formats are mismatched.
-So, We add the code to change MDP_RGBA_8888 to MDP_RGB_888 at mdp3_overlay_set when is_done_drawing_logo is not "1".
-is_done_drawing_logo is set to 1 at mdss_dsi_panel_off.
-*/
-	is_done_drawing_logo = 1;
-#endif
-
-	pr_info("%s:-\n", __func__);
-	return 0;
-}
-#endif
 
 static void mdss_dsi_parse_lane_swap(struct device_node *np, char *dlane_swap)
 {
